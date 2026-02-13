@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "magma_mplib"
+version = "1.0.0"
+description = "MPLib-based motion planner service for MAGMA."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "BSD-2-Clause"}
+authors = [
+    {name = "Loan Bernat"}
+]
+
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "mplib==0.2.1",
+    "toppra",
+    "json-numpy",
+    "numpy",
+    "pydantic>=2.0"
+]
+
+[project.scripts]
+magma_mplib = "magma_mplib.__main__:main"
+
+[tool.setuptools.package-data]
+magma_mplib = ["assets/**/*"]
