@@ -2,14 +2,15 @@
 # Author : Loan BERNAT (l.bernat@sileane.com)
 
 # ruff: noqa: E402
-from typing import List, Optional
 import logging
-from pydantic import BaseModel, Field
+import os
+from pathlib import Path
+from typing import List, Optional
 
 import numpy as np
+from pydantic import BaseModel, Field
 from mplib.pymp import Pose
 from mplib.planner import Planner
-from pathlib import Path
 import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
@@ -33,6 +34,9 @@ class PlanRequest(BaseModel):
     pose: List[float] = Field(..., min_length=7, max_length=7)
     robot_qpos: List[float] = Field(..., min_length=7, max_length=7)
     base_pose: Optional[List[float]] = Field(None, min_length=7, max_length=7)
+    robot_name: Optional[str] = None
+    env_id: Optional[int] = None
+    waypoint_index: Optional[int] = None
 
 class PlanResponse(BaseModel):
     status: str
@@ -46,6 +50,12 @@ class MPLIBServer:
 
     def __init__(self):
         self.planner = None
+        self.debug_logging = os.getenv("MAGMA_PLANNER_DEBUG", "0").lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
 
     def initPlanner(self, req : InitPlannerRequest):
 
@@ -72,7 +82,7 @@ class MPLIBServer:
 
     def plan(self, req : PlanRequest):
         if self.planner is None:
-            print("ERROR : Planner not initialized. Please call /init before.")
+            logger.error("Planner not initialized. Please call /init before /plan.")
             return PlanResponse(status="Failure")
         try:
             if req.base_pose is not None:
@@ -90,6 +100,37 @@ class MPLIBServer:
             physical_qpos = self.planner.robot.get_qpos().copy()
             physical_qpos[:len(arm_qpos)] = arm_qpos
 
+            request_context = (
+                f"robot={req.robot_name!r} env={req.env_id} "
+                f"waypoint={req.waypoint_index}"
+            )
+            if self.debug_logging:
+                self.planner.pinocchio_model.compute_forward_kinematics(
+                    physical_qpos
+                )
+                tcp_link_index = self.planner.link_name_2_idx[
+                    self.planner.move_group
+                ]
+                tcp_pose_in_base = self.planner.pinocchio_model.get_link_pose(
+                    tcp_link_index
+                )
+                planner_base_pose = self.planner.robot.get_base_pose()
+                current_tcp_pose = planner_base_pose * tcp_pose_in_base
+                base_values = np.concatenate(
+                    [planner_base_pose.p, planner_base_pose.q]
+                ).round(4).tolist()
+                tcp_values = np.concatenate(
+                    [current_tcp_pose.p, current_tcp_pose.q]
+                ).round(4).tolist()
+                target_values = np.asarray(req.pose).round(4).tolist()
+                arm_values = arm_qpos.round(4).tolist()
+                request_context += (
+                    f" base={base_values}"
+                    f" current_tcp={tcp_values}"
+                    f" target={target_values}"
+                    f" arm_qpos={arm_values}"
+                )
+
             result = self.planner.plan_screw(
                 pose,
                 physical_qpos,
@@ -98,12 +139,21 @@ class MPLIBServer:
 
             screw_status = result["status"]
             if screw_status == "Success":
-                logger.info("Motion plan succeeded with screw planning")
+                if self.debug_logging:
+                    logger.info(
+                        "Motion plan succeeded with screw planning: %s",
+                        request_context,
+                    )
             else:
-                logger.warning(
-                    "Screw planning failed with status %r; falling back to RRT",
-                    screw_status,
-                )
+                if self.debug_logging:
+                    logger.warning(
+                        (
+                            "Screw planning failed with status %r; "
+                            "falling back to RRT: %s"
+                        ),
+                        screw_status,
+                        request_context,
+                    )
                 result = self.planner.plan_pose(
                     pose,
                     physical_qpos,
@@ -112,15 +162,18 @@ class MPLIBServer:
                 )
 
                 if result["status"] == "Success":
-                    logger.info(
-                        "Motion plan succeeded with RRT after screw status %r",
-                        screw_status,
-                    )
+                    if self.debug_logging:
+                        logger.info(
+                            "Motion plan succeeded with RRT after screw status %r: %s",
+                            screw_status,
+                            request_context,
+                        )
                 else:
                     logger.error(
-                        "Motion planning failed with screw status %r and RRT status %r",
+                        "Motion planning failed with screw status %r and RRT status %r: %s",
                         screw_status,
                         result["status"],
+                        request_context,
                     )
 
             if result["status"] != "Success":

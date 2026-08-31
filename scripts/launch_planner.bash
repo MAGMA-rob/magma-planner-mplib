@@ -11,4 +11,5 @@ docker build -t "${IMAGE_NAME}" .
 docker run --rm \
     --name "${CONTAINER_NAME}" \
     -p 8000:8000 \
+    -e MAGMA_PLANNER_DEBUG="${MAGMA_PLANNER_DEBUG:-0}" \
     "${IMAGE_NAME}"

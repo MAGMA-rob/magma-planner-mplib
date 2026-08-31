@@ -104,6 +104,20 @@ This tells MAGMA where to send:
 
 The planner must be running before launching MAGMA-GEN or MAGMA-BENCH.
 
+## Planner debug logs
+
+Detailed per-waypoint planner logs are disabled by default. Enable them when
+launching the Docker container with:
+
+```bash
+MAGMA_PLANNER_DEBUG=1 bash scripts/launch_planner.bash
+```
+
+When enabled, the logs include the selected planner, robot, environment,
+waypoint, robot base, current TCP pose, target pose, and arm joint positions.
+Final planning failures remain visible as compact error logs when debug logging
+is disabled.
+
 ---
 
 # Planner API Specification
@@ -157,6 +171,9 @@ class PlanRequest(BaseModel):
     pose: List[float]               # [x, y, z, qx, qy, qz, qw]
     robot_qpos: List[float]         # Seven arm joints; excludes the gripper
     base_pose: Optional[List[float]] = None
+    robot_name: Optional[str] = None       # Diagnostic context
+    env_id: Optional[int] = None           # Diagnostic context
+    waypoint_index: Optional[int] = None   # Diagnostic context
 ```
 
 ## Response Schema
