@@ -87,10 +87,12 @@ class MPLIBServer:
                 q=np.asarray(req.pose[3:])
             )
             arm_qpos = np.asarray(req.robot_qpos)
+            physical_qpos = self.planner.robot.get_qpos().copy()
+            physical_qpos[:len(arm_qpos)] = arm_qpos
 
             result = self.planner.plan_screw(
                 pose,
-                arm_qpos,
+                physical_qpos,
                 time_step=self.control_timestep
             )
 
@@ -104,7 +106,7 @@ class MPLIBServer:
                 )
                 result = self.planner.plan_pose(
                     pose,
-                    arm_qpos,
+                    physical_qpos,
                     time_step=self.control_timestep,
                     wrt_world=True,
                 )

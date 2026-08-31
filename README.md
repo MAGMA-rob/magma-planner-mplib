@@ -178,7 +178,10 @@ The returned trajectory must include:
 - The seven planned arm joints
 
 The MAGMA action converter owns the normalized gripper command and appends it
-to the planner trajectory when constructing ManiSkill controller actions.
+to the planner trajectory when constructing ManiSkill controller actions. The
+MPLIB backend completes the seven received arm joints with its valid physical
+finger positions because MPLIB 0.2.1 requires the full robot configuration in
+the RRT fallback.
 
 ---
 
