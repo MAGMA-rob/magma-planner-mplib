@@ -155,7 +155,7 @@ Must return HTTP 200 on success.
 ```python
 class PlanRequest(BaseModel):
     pose: List[float]               # [x, y, z, qx, qy, qz, qw]
-    robot_qpos: List[float]
+    robot_qpos: List[float]         # Seven arm joints; excludes the gripper
     base_pose: Optional[List[float]] = None
 ```
 
@@ -175,8 +175,10 @@ class PlanResponse(BaseModel):
 - Must return `"Failure"` if planning fails
 
 The returned trajectory must include:
-- All robot joints
-- Gripper value appended as final column
+- The seven planned arm joints
+
+The MAGMA action converter owns the normalized gripper command and appends it
+to the planner trajectory when constructing ManiSkill controller actions.
 
 ---
 

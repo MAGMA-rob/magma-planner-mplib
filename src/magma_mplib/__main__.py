@@ -2,7 +2,8 @@
 # Author : Loan BERNAT (l.bernat@sileane.com)
 
 # ruff: noqa: E402
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
+import logging
 from pydantic import BaseModel, Field
 
 import numpy as np
@@ -30,7 +31,7 @@ class InitPlannerRequest(BaseModel):
 ## PLAN
 class PlanRequest(BaseModel):
     pose: List[float] = Field(..., min_length=7, max_length=7)
-    robot_qpos: List[float]
+    robot_qpos: List[float] = Field(..., min_length=7, max_length=7)
     base_pose: Optional[List[float]] = Field(None, min_length=7, max_length=7)
 
 class PlanResponse(BaseModel):
@@ -38,6 +39,7 @@ class PlanResponse(BaseModel):
     position: Optional[List[List[float]]] = None
 
 BASE_DIR = Path(__file__).parent
+logger = logging.getLogger("uvicorn.error")
 
 class MPLIBServer:
     planner : Optional[Planner]
@@ -84,35 +86,50 @@ class MPLIBServer:
                 p=np.asarray(req.pose[0:3]),
                 q=np.asarray(req.pose[3:])
             )
-            qpos = np.asarray(req.robot_qpos)
-            q = self.planner.robot.get_qpos()
-            q[0:len(qpos)] = qpos
+            arm_qpos = np.asarray(req.robot_qpos)
 
             result = self.planner.plan_screw(
                 pose,
-                q,
+                arm_qpos,
                 time_step=self.control_timestep
             )
 
-            if result["status"] != "Success":
+            screw_status = result["status"]
+            if screw_status == "Success":
+                logger.info("Motion plan succeeded with screw planning")
+            else:
+                logger.warning(
+                    "Screw planning failed with status %r; falling back to RRT",
+                    screw_status,
+                )
                 result = self.planner.plan_pose(
                     pose,
-                    q,
+                    arm_qpos,
                     time_step=self.control_timestep,
                     wrt_world=True,
                 )
 
-            traj = np.array(result["position"])
-            grip_val = qpos[7]
-            grip_col = np.full((traj.shape[0], 1), grip_val)
-            result["position"] = np.hstack((traj, grip_col)).tolist()
+                if result["status"] == "Success":
+                    logger.info(
+                        "Motion plan succeeded with RRT after screw status %r",
+                        screw_status,
+                    )
+                else:
+                    logger.error(
+                        "Motion planning failed with screw status %r and RRT status %r",
+                        screw_status,
+                        result["status"],
+                    )
+
+            if result["status"] != "Success":
+                return PlanResponse(status="Failure")
 
             return PlanResponse(
                 status="Success",
-                position=result["position"]
+                position=np.asarray(result["position"]).tolist()
             )
         except Exception as e:
-            print(e)
+            logger.exception("Unexpected motion planning error: %s", e)
             return PlanResponse(status="Failure")
 
     def run(self, host: str = "MAGMA_mplib", port: int = 8000) -> None:
