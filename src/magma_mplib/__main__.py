@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import List, Optional
 
 import numpy as np
+from mplib import set_global_seed
 from pydantic import BaseModel, Field
 from mplib.pymp import Pose
 from mplib.planner import Planner
@@ -37,6 +38,7 @@ class PlanRequest(BaseModel):
     robot_name: Optional[str] = None
     env_id: Optional[int] = None
     waypoint_index: Optional[int] = None
+    planner_attempt: int = Field(0, ge=0)
 
 class PlanResponse(BaseModel):
     status: str
@@ -45,6 +47,7 @@ class PlanResponse(BaseModel):
 BASE_DIR = Path(__file__).parent
 logger = logging.getLogger("uvicorn.error")
 MAX_ACTIONS_PER_WAYPOINT = 200
+BASE_PLANNER_SEED = 0
 
 class MPLIBServer:
     planner : Optional[Planner]
@@ -100,10 +103,13 @@ class MPLIBServer:
             arm_qpos = np.asarray(req.robot_qpos)
             physical_qpos = self.planner.robot.get_qpos().copy()
             physical_qpos[:len(arm_qpos)] = arm_qpos
+            planner_seed = BASE_PLANNER_SEED + req.planner_attempt
+            set_global_seed(planner_seed)
 
             request_context = (
                 f"robot={req.robot_name!r} env={req.env_id} "
-                f"waypoint={req.waypoint_index}"
+                f"waypoint={req.waypoint_index} attempt={req.planner_attempt} "
+                f"seed={planner_seed}"
             )
             if self.debug_logging:
                 self.planner.pinocchio_model.compute_forward_kinematics(
@@ -132,32 +138,36 @@ class MPLIBServer:
                     f" arm_qpos={arm_values}"
                 )
 
-            screw_result = self.planner.plan_screw(
-                pose,
-                physical_qpos,
-                time_step=self.control_timestep
-            )
+            result = None
+            screw_result = None
+            screw_status = "Skipped"
+            screw_action_count = None
 
-            screw_status = screw_result["status"]
-            screw_action_count = (
-                len(screw_result["position"])
-                if screw_status == "Success"
-                else None
-            )
-            screw_is_too_long = (
-                screw_action_count is not None
-                and screw_action_count > MAX_ACTIONS_PER_WAYPOINT
-            )
+            if req.planner_attempt == 0:
+                screw_result = self.planner.plan_screw(
+                    pose,
+                    physical_qpos,
+                    time_step=self.control_timestep,
+                )
+                screw_status = screw_result["status"]
+                screw_action_count = (
+                    len(screw_result["position"])
+                    if screw_status == "Success"
+                    else None
+                )
+                screw_is_too_long = (
+                    screw_action_count is not None
+                    and screw_action_count > MAX_ACTIONS_PER_WAYPOINT
+                )
 
-            if screw_status == "Success" and not screw_is_too_long:
-                result = screw_result
-                if self.debug_logging:
-                    logger.info(
-                        "Motion plan succeeded with screw planning: %s",
-                        request_context,
-                    )
-            else:
-                if screw_is_too_long:
+                if screw_status == "Success" and not screw_is_too_long:
+                    result = screw_result
+                    if self.debug_logging:
+                        logger.info(
+                            "Motion plan succeeded with screw planning: %s",
+                            request_context,
+                        )
+                elif screw_is_too_long:
                     logger.warning(
                         (
                             "Screw trajectory has %d actions, above the %d-action "
@@ -176,6 +186,10 @@ class MPLIBServer:
                         screw_status,
                         request_context,
                     )
+            elif self.debug_logging:
+                logger.info("Planner retry uses RRT directly: %s", request_context)
+
+            if result is None:
                 rrt_result = self.planner.plan_pose(
                     pose,
                     physical_qpos,
@@ -202,7 +216,7 @@ class MPLIBServer:
                             screw_status,
                             request_context,
                         )
-                elif screw_status == "Success":
+                elif screw_status == "Success" and screw_result is not None:
                     result = screw_result
                     logger.warning(
                         (
