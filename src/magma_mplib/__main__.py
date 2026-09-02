@@ -44,6 +44,7 @@ class PlanResponse(BaseModel):
 
 BASE_DIR = Path(__file__).parent
 logger = logging.getLogger("uvicorn.error")
+MAX_ACTIONS_PER_WAYPOINT = 200
 
 class MPLIBServer:
     planner : Optional[Planner]
@@ -131,21 +132,42 @@ class MPLIBServer:
                     f" arm_qpos={arm_values}"
                 )
 
-            result = self.planner.plan_screw(
+            screw_result = self.planner.plan_screw(
                 pose,
                 physical_qpos,
                 time_step=self.control_timestep
             )
 
-            screw_status = result["status"]
-            if screw_status == "Success":
+            screw_status = screw_result["status"]
+            screw_action_count = (
+                len(screw_result["position"])
+                if screw_status == "Success"
+                else None
+            )
+            screw_is_too_long = (
+                screw_action_count is not None
+                and screw_action_count > MAX_ACTIONS_PER_WAYPOINT
+            )
+
+            if screw_status == "Success" and not screw_is_too_long:
+                result = screw_result
                 if self.debug_logging:
                     logger.info(
                         "Motion plan succeeded with screw planning: %s",
                         request_context,
                     )
             else:
-                if self.debug_logging:
+                if screw_is_too_long:
+                    logger.warning(
+                        (
+                            "Screw trajectory has %d actions, above the %d-action "
+                            "limit; trying RRT: %s"
+                        ),
+                        screw_action_count,
+                        MAX_ACTIONS_PER_WAYPOINT,
+                        request_context,
+                    )
+                elif self.debug_logging:
                     logger.warning(
                         (
                             "Screw planning failed with status %r; "
@@ -154,21 +176,45 @@ class MPLIBServer:
                         screw_status,
                         request_context,
                     )
-                result = self.planner.plan_pose(
+                rrt_result = self.planner.plan_pose(
                     pose,
                     physical_qpos,
                     time_step=self.control_timestep,
                     wrt_world=True,
                 )
 
-                if result["status"] == "Success":
+                if rrt_result["status"] == "Success":
+                    result = rrt_result
+                    rrt_action_count = len(rrt_result["position"])
+                    if rrt_action_count > MAX_ACTIONS_PER_WAYPOINT:
+                        logger.warning(
+                            (
+                                "RRT trajectory has %d actions, above the %d-action "
+                                "limit: %s"
+                            ),
+                            rrt_action_count,
+                            MAX_ACTIONS_PER_WAYPOINT,
+                            request_context,
+                        )
                     if self.debug_logging:
                         logger.info(
                             "Motion plan succeeded with RRT after screw status %r: %s",
                             screw_status,
                             request_context,
                         )
+                elif screw_status == "Success":
+                    result = screw_result
+                    logger.warning(
+                        (
+                            "RRT planning failed with status %r after a %d-action "
+                            "screw trajectory; keeping the screw trajectory: %s"
+                        ),
+                        rrt_result["status"],
+                        screw_action_count,
+                        request_context,
+                    )
                 else:
+                    result = rrt_result
                     logger.error(
                         "Motion planning failed with screw status %r and RRT status %r: %s",
                         screw_status,
