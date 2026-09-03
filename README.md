@@ -65,7 +65,7 @@ curl http://localhost:8000
 ### 1. Build and Launch the planner
 
 ```bash
-bash scripts/launch_planner.bash
+bash scripts/launch_planner.bash -p 8000
 ```
 
 This script:
@@ -110,7 +110,7 @@ Detailed per-waypoint planner logs are disabled by default. Enable them when
 launching the Docker container with:
 
 ```bash
-MAGMA_PLANNER_DEBUG=1 bash scripts/launch_planner.bash
+MAGMA_PLANNER_DEBUG=1 bash scripts/launch_planner.bash -p 8000
 ```
 
 When enabled, the logs include the selected planner, robot, environment,
