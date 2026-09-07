@@ -24,7 +24,7 @@ dependencies = [
 ]
 
 [project.scripts]
-magma_mplib = "magma_mplib.__main__:main"
+magma-planner = "magma_mplib.command_line:main"
 
 [tool.setuptools.package-data]
 magma_mplib = ["assets/**/*"]

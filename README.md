@@ -265,3 +265,11 @@ l.bernat@sileane.com
 # License
 
 BSD 2-Clause
+
+## Commandes
+
+| Commande | Fonctionnement |
+|---|---|
+| `magma-planner serve` | Démarrer le planner MPLib |
+
+`magma-planner --help`, `magma-planner <commande> --help` et `magma-planner --version`.
