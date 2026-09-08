@@ -47,7 +47,7 @@ class PlanResponse(BaseModel):
 BASE_DIR = Path(__file__).parent
 logger = logging.getLogger("uvicorn.error")
 MAX_ACTIONS_PER_WAYPOINT = 200
-BASE_PLANNER_SEED = 0
+BASE_PLANNER_SEED = 42
 
 class MPLIBServer:
     planner : Optional[Planner]
