@@ -2,6 +2,12 @@
 
 Motion planner HTTP server for MAGMA-GEN and MAGMA-BENCH, powered by MPLib.
 
+The core v3 uses [request-isolated planner v2](docs/planner-v2.md), with no
+prior `/init`. Version 2 exposes only `/v2/plan`. `/init` and `/plan` have been removed.
+Use `magma-planner serve --workers 2` for two process workers. Run
+`python examples/request_isolation.py --endpoint http://127.0.0.1:8000` in the
+planner environment for an executable request/geometry/isolation example.
+
 ## Run with Docker (recommended)
 
 Install Git and Docker, then run these commands from a terminal:
